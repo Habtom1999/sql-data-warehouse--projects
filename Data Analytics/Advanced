@@ -1,1 +1,150 @@
+-- Advanced Data Analtics
+-- Answer busniess Questions 
+-- Cumulative Analysis , Change over time, Performance analysis, Part -to-Whole, Data Segmentation, Reporting
+-- Advanced Analytics Project
+-- Change over time Analysis
+-- Summation(meaure) BY[ Date Dimension]
+-- Q1 Analyze Sales Performance Over time
+SELECT
+YEAR( order_date) as order_year,
+SUM(sales_amount) as total_sales,
+COUNT(DISTINCT customer_key) as total_customers,
+SUM(quantity) as total_quantity
+FROM gold.fact_sales
+WHERE order_date IS NOT NULL
+GROUP BY YEAR( order_date)
+ORDER BY YEAR( order_date)
 
+--- Aggreaget by Month
+SELECT
+YEAR(order_date) as order_year,
+MONTH(order_date) as order_month,
+SUM(sales_amount) as total_sales,
+COUNT(DISTINCT customer_key) as total_customers,
+SUM(quantity) as total_quantity
+FROM gold.fact_sales
+WHERE order_date IS NOT NULL
+GROUP BY YEAR(order_date), MONTH(order_date)
+ORDER BY YEAR(order_date),MONTH(order_date)
+
+SELECT
+DATETRUNC(year,order_date)as order_date,
+SUM(sales_amount) as total_sales,
+COUNT(DISTINCT customer_key) as total_customers,
+SUM(quantity) as total_quantity
+FROM gold.fact_sales
+WHERE order_date IS NOT NULL
+GROUP BY DATETRUNC(year,order_date)
+ORDER BY DATETRUNC(year,order_date)
+
+-- Cumulative Analysis ( Q2)
+-- Calculate the total saless per month and the running total of sales over time.
+
+SELECT
+DATETRUNC(month,order_date) AS order_date,
+SUM(sales_amount) AS total_sales
+FROM gold.fact_sales
+WHERE order_date IS NOT NULL
+GROUP BY DATETRUNC(month,order_date)
+ORDER BY DATETRUNC(month,order_date)
+
+-- Running total
+
+SELECT
+order_date,
+total_sales,
+SUM(total_sales) OVER (ORDER BY order_Date) AS running_total_sales-- window function
+FROM
+(
+SELECT
+DATETRUNC(month,order_date) AS order_date,
+SUM(sales_amount) AS total_sales
+FROM gold.fact_sales
+WHERE order_date IS NOT NULL
+GROUP BY DATETRUNC(month,order_date)
+)t
+
+--- Partition BY year partion by year 
+SELECT
+order_date,
+total_sales,
+SUM(total_sales)OVER (PARTITION BY order_date ORDER BY order_date) AS running_totals_sale
+
+FROM
+(
+SELECT
+DATETRUNC(month,order_date) AS order_date,
+SUM(sales_amount) AS total_sales
+FROM gold.fact_sales
+WHERE order_date IS NOT NULL
+GROUP BY DATETRUNC(month,order_date)
+)t
+
+--- Cumlative value by year
+SELECT
+order_date,
+total_sales,
+SUM(total_sales)OVER (PARTITION BY order_date ORDER BY order_date) AS running_totals_sale
+
+FROM
+(
+SELECT
+DATETRUNC(year,order_date) AS order_date,
+SUM(sales_amount) AS total_sales
+FROM gold.fact_sales
+WHERE order_date IS NOT NULL
+GROUP BY DATETRUNC(year, order_date)
+)t
+--- moving_average_price
+SELECT
+order_date,
+total_sales,
+SUM(total_sales)OVER (PARTITION BY order_date ORDER BY order_date) AS running_totals_sales,
+SUM(avg_price) OVER (ORDER BY order_date) AS moving_average_price
+FROM
+(
+SELECT
+DATETRUNC(year,order_date) AS order_date,
+SUM(sales_amount) AS total_sales,
+AVG(price) AS avg_price
+FROM gold.fact_sales
+WHERE order_date IS NOT NULL
+GROUP BY DATETRUNC(year, order_date)
+)t
+--Q3 Performance Analysis( Comparing the current value with teh target value) 
+-- We use the Window Functions
+/*Q3 Analyze the yearly performance of products by comparing each product's sales
+to both its average sales performance and the previous year's sales*/
+WITH yearly_product_sales AS(
+SELECT
+YEAR(f.order_date) AS order_year,
+p.product_name,
+SUM(f.sales_amount) AS current_sales
+FROM gold.fact_sales f
+LEFT JOIN gold.dim_products p
+ON f.product_key = p.product_key
+WHERE f.order_date IS NOT NULL
+GROUP BY
+YEAR(f.order_Date),
+p.product_name
+)
+SELECT
+order_year,
+product_name,
+current_sales,
+AVG(current_sales) OVER ( PARTITION BY product_name) avg_sales,
+current_sales- AVG(current_sales) OVER ( PARTITION BY product_name) AS diff_avg,
+CASE WHEN current_sales - AVG(current_sales) OVER ( PARTITION BY product_name) > 0 THEN 'Above Avg' --- Flag to indicate comparing the peformance of current sales with the average
+     WHEN current_sales - AVG(current_sales) OVER ( PARTITION BY product_name) < 0 THEN 'Below Avg'
+     ELSE 'AVg'
+END avg_change,
+-- Year-over-year- Analysis 
+-- Month -over-month Analysis chnage the year from year to month.
+LAG(current_sales ) OVER (PARTITION BY Product_name ORDER BY order_year ) py_sales,--- To acces the previous year sales
+current_sales - LAG(current_sales ) OVER (PARTITION BY Product_name ORDER BY order_year ) AS diff_py,
+CASE WHEN current_sales - LAG(current_sales ) OVER (PARTITION BY Product_name ORDER BY order_year ) > 0 THEN 'Increase'
+     WHEN current_sales - LAG(current_sales ) OVER (PARTITION BY Product_name ORDER BY order_year ) < 0 THEN 'Decrease'
+     ELSE 'No Change'
+END py_change
+FROM yearly_product_sales
+ORDER BY product_name, order_year
